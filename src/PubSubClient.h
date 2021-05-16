@@ -11,6 +11,8 @@
 #include "IPAddress.h"
 #include "Client.h"
 #include "Stream.h"
+//DR
+#include "RVAutomation.h"
 
 #define MQTT_VERSION_3_1      3
 #define MQTT_VERSION_3_1_1    4
@@ -128,7 +130,8 @@ public:
    PubSubClient(const char*, uint16_t, MQTT_CALLBACK_SIGNATURE,Client& client);
    PubSubClient(const char*, uint16_t, MQTT_CALLBACK_SIGNATURE,Client& client, Stream&);
 
-   ~PubSubClient();
+   //DR: added virtual
+   virtual ~PubSubClient();
 
    PubSubClient& setServer(IPAddress ip, uint16_t port);
    PubSubClient& setServer(uint8_t * ip, uint16_t port);

@@ -159,7 +159,9 @@ PubSubClient::PubSubClient(const char* domain, uint16_t port, MQTT_CALLBACK_SIGN
 }
 
 PubSubClient::~PubSubClient() {
-  free(this->buffer);
+    //DR
+    if (this->buffer != nullptr)
+        free(this->buffer);
 }
 
 boolean PubSubClient::connect(const char *id) {
@@ -253,6 +255,8 @@ boolean PubSubClient::connect(const char *id, const char *user, const char *pass
             write(MQTTCONNECT,this->buffer,length-MQTT_MAX_HEADER_SIZE);
 
             lastInActivity = lastOutActivity = millis();
+            //DR https://github.com/knolleary/pubsubclient/pull/802
+            pingOutstanding = false;
 
             while (!_client->available()) {
                 unsigned long t = millis();
@@ -261,6 +265,10 @@ boolean PubSubClient::connect(const char *id, const char *user, const char *pass
                     _client->stop();
                     return false;
                 }
+
+                //DR loop Loopeables
+                AppContext.loop();
+                yield();                
             }
             uint8_t llen;
             uint32_t len = readPacket(&llen);
@@ -382,6 +390,7 @@ boolean PubSubClient::loop() {
                 lastOutActivity = t;
                 lastInActivity = t;
                 pingOutstanding = true;
+                //Serial.println("MQTT: Sending MQTTPINGREQ");
             }
         }
         if (_client->available()) {
@@ -420,8 +429,11 @@ boolean PubSubClient::loop() {
                     this->buffer[0] = MQTTPINGRESP;
                     this->buffer[1] = 0;
                     _client->write(this->buffer,2);
+                    //Serial.println("MQTT: got ping request from server");
                 } else if (type == MQTTPINGRESP) {
                     pingOutstanding = false;
+                    //Serial.println("MQTT: got MQTTPINGRESP");
+
                 }
             } else if (!connected()) {
                 // readPacket has closed the connection
@@ -484,7 +496,9 @@ boolean PubSubClient::publish_P(const char* topic, const uint8_t* payload, unsig
     unsigned int i;
     uint8_t header;
     unsigned int len;
-    int expectedLength;
+    //DR
+    //int expectedLength;
+    unsigned int expectedLength;
 
     if (!connected()) {
         return false;
@@ -585,7 +599,13 @@ boolean PubSubClient::write(uint8_t header, uint8_t* buf, uint16_t length) {
 #ifdef MQTT_MAX_TRANSFER_SIZE
     uint8_t* writeBuf = buf+(MQTT_MAX_HEADER_SIZE-hlen);
     uint16_t bytesRemaining = length+hlen;  //Match the length type
-    uint8_t bytesToWrite;
+
+    //DR
+    //uint8_t bytesToWrite;
+    //https://github.com/knolleary/pubsubclient/pull/844
+    uint16_t bytesToWrite;
+
+
     boolean result = true;
     while((bytesRemaining > 0) && result) {
         bytesToWrite = (bytesRemaining > MQTT_MAX_TRANSFER_SIZE)?MQTT_MAX_TRANSFER_SIZE:bytesRemaining;
