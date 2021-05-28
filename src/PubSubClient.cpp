@@ -256,7 +256,7 @@ boolean PubSubClient::connect(const char *id, const char *user, const char *pass
 
             lastInActivity = lastOutActivity = millis();
             //DR https://github.com/knolleary/pubsubclient/pull/802
-            pingOutstanding = false;
+            pingsSent = 0;
 
             while (!_client->available()) {
                 unsigned long t = millis();
@@ -268,7 +268,7 @@ boolean PubSubClient::connect(const char *id, const char *user, const char *pass
 
                 //DR loop Loopeables
                 AppContext.loop();
-                yield();                
+                delay(1);
             }
             uint8_t llen;
             uint32_t len = readPacket(&llen);
@@ -276,7 +276,7 @@ boolean PubSubClient::connect(const char *id, const char *user, const char *pass
             if (len == 4) {
                 if (buffer[3] == 0) {
                     lastInActivity = millis();
-                    pingOutstanding = false;
+                    pingsSent = 0;
                     _state = MQTT_CONNECTED;
                     return true;
                 } else {
@@ -378,28 +378,42 @@ uint32_t PubSubClient::readPacket(uint8_t* lengthLength) {
 boolean PubSubClient::loop() {
     if (connected()) {
         unsigned long t = millis();
-        if ((t - lastInActivity > this->keepAlive*1000UL) || (t - lastOutActivity > this->keepAlive*1000UL)) {
-            if (pingOutstanding) {
+        if ((t - lastInActivity > this->keepAlive*1000UL) || (t - lastOutActivity > this->keepAlive*1000UL)) 
+        {
+            if (pingsSent>=MQTT_PINGS_TO_SEND_BEFORE_TIMEOUT) 
+            {
                 this->_state = MQTT_CONNECTION_TIMEOUT;
+                AppContext.addError("MQTT timeout!");
                 _client->stop();
                 return false;
-            } else {
+            } 
+            else 
+            {
                 this->buffer[0] = MQTTPINGREQ;
                 this->buffer[1] = 0;
                 _client->write(this->buffer,2);
+                if (pingsSent>0)
+                    AppContext.addError("Sending mqtt ping:" + String(pingsSent) + " - in:" + String(t - lastInActivity)+ " - out:" + String(t - lastOutActivity) + " - keep:" + String(this->keepAlive));
+
+                pingsSent++;                
                 lastOutActivity = t;
                 lastInActivity = t;
-                pingOutstanding = true;
                 //Serial.println("MQTT: Sending MQTTPINGREQ");
             }
         }
         if (_client->available()) {
             uint8_t llen;
             uint16_t len = readPacket(&llen);
-            uint16_t msgId = 0;
-            uint8_t *payload;
+
+            //DR: moved declaration to where they are used
+            //uint16_t msgId = 0;
+            //uint8_t *payload;
+
             if (len > 0) {
                 lastInActivity = t;
+
+                //DR: no need to wait for the ping answer if we just got a packet
+                pingsSent = 0;
                 uint8_t type = this->buffer[0]&0xF0;
                 if (type == MQTTPUBLISH) {
                     if (callback) {
@@ -409,8 +423,8 @@ boolean PubSubClient::loop() {
                         char *topic = (char*) this->buffer+llen+2;
                         // msgId only present for QOS>0
                         if ((this->buffer[0]&0x06) == MQTTQOS1) {
-                            msgId = (this->buffer[llen+3+tl]<<8)+this->buffer[llen+3+tl+1];
-                            payload = this->buffer+llen+3+tl+2;
+                        	uint16_t msgId = (this->buffer[llen+3+tl]<<8)+this->buffer[llen+3+tl+1];
+                        	uint8_t* payload = this->buffer+llen+3+tl+2;
                             callback(topic,payload,len-llen-3-tl-2);
 
                             this->buffer[0] = MQTTPUBACK;
@@ -421,7 +435,7 @@ boolean PubSubClient::loop() {
                             lastOutActivity = t;
 
                         } else {
-                            payload = this->buffer+llen+3+tl;
+                        	uint8_t* payload = this->buffer+llen+3+tl;
                             callback(topic,payload,len-llen-3-tl);
                         }
                     }
@@ -431,7 +445,8 @@ boolean PubSubClient::loop() {
                     _client->write(this->buffer,2);
                     //Serial.println("MQTT: got ping request from server");
                 } else if (type == MQTTPINGRESP) {
-                    pingOutstanding = false;
+                    //AppContext.addInfo("got ping resp");
+                    pingsSent = 0;
                     //Serial.println("MQTT: got MQTTPINGRESP");
 
                 }
@@ -706,9 +721,12 @@ boolean PubSubClient::connected() {
     if (_client == NULL ) {
         rc = false;
     } else {
+
         rc = (int)_client->connected();
         if (!rc) {
             if (this->_state == MQTT_CONNECTED) {
+                AppContext.addError("MQTT_CONNECTION_LOST");
+
                 this->_state = MQTT_CONNECTION_LOST;
                 _client->flush();
                 _client->stop();

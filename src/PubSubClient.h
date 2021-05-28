@@ -23,6 +23,7 @@
 #define MQTT_VERSION MQTT_VERSION_3_1_1
 #endif
 
+/*
 // MQTT_MAX_PACKET_SIZE : Maximum packet size. Override with setBufferSize().
 #ifndef MQTT_MAX_PACKET_SIZE
 #define MQTT_MAX_PACKET_SIZE 256
@@ -32,6 +33,7 @@
 #ifndef MQTT_KEEPALIVE
 #define MQTT_KEEPALIVE 15
 #endif
+*/
 
 // MQTT_SOCKET_TIMEOUT: socket timeout interval in Seconds. Override with setSocketTimeout()
 #ifndef MQTT_SOCKET_TIMEOUT
@@ -97,7 +99,12 @@ private:
    uint16_t nextMsgId;
    unsigned long lastOutActivity;
    unsigned long lastInActivity;
-   bool pingOutstanding;
+   //DR Changes to send 3 pings without response before calling the connection dead.
+   //bool pingOutstanding;
+   #define MQTT_PINGS_TO_SEND_BEFORE_TIMEOUT 3
+   int pingsSent=0;
+
+
    MQTT_CALLBACK_SIGNATURE;
    uint32_t readPacket(uint8_t*);
    boolean readByte(uint8_t * result);
